@@ -20,10 +20,9 @@
         const socketIP = urlSearchParams.get("ip") || "localhost:3000";
         const isMute = urlSearchParams.get("mute") || true;
         const playerID = urlSearchParams.get("player") || 1;
-
+        console.log(isMute)
         const socket = io(socketIP);
 
-        console.log(socketIP);
         let streamDataOld = null;
 
         const options = {
@@ -43,60 +42,69 @@
         });
 
         // サーバーからデータを取得
-        socket.on("broadcast", (data) => {
+        socket.on("broadcast", (data) => chanegeStreamData(data));
+
+        function chanegeStreamData(data) {
             if (data.event == "return_stream") {
-                const streamData = data.body.find(stream => stream.group == playerID); // グループ1を左側プレイヤーとして取得
-                console.log(playerID)
-                console.log(streamData)
+                const streamData = data.body.find(stream => stream.group == playerID);
+                console.log(playerID);
+                console.log(streamData);
+
                 if (streamDataOld?.stream != streamData.stream) {
                     streamDataOld = streamData;
-                    options.channel = streamData.stream.replace("https://www.twitch.tv/", "");
-                    document.getElementById("player_container").innerHTML = "";
+                    const newChannel = streamData.stream.replace("https://www.twitch.tv/", "");
 
-                    let player = new Twitch.Player("player_container", options);
-                    player.setMuted(isMute);
-                    player.setVolume(1.0);
+                    if (window.player) {
+                        // 既存のプレイヤーがある場合はチャンネルを変更
+                        window.player.setChannel(newChannel);
+                        console.info("Channel updated to:", newChannel);
+                    } else {
+                        // プレイヤーが存在しない場合は新規作成
+                        options.channel = newChannel;
+                        let player = new Twitch.Player("player_container", options);
+                        player.setVolume(1.0);
 
-                    player.addEventListener(
-                        Twitch.Player.ONLINE,
-                        (e) => {
-                            console.warn("Channel went online.", e);
+                        player.addEventListener(
+                            Twitch.Player.ONLINE,
+                            (e) => {
+                                console.warn("Channel went online.", e);
 
-                            const updateQuality = () => {
-                                var currentQuality = player.getQuality();
-                                console.info("current quality:", currentQuality);
+                                const updateQuality = () => {
+                                    var currentQuality = player.getQuality();
+                                    console.info("current quality:", currentQuality);
 
-                                if (currentQuality != "chunked") {
-                                    var qualities = player.getQualities();
+                                    if (currentQuality != "chunked") {
+                                        var qualities = player.getQualities();
 
-                                    var newQuality = Enumerable
-                                        .from(qualities)
-                                        .firstOrDefault(x => x.name.toLowerCase().includes("source"))
-                                        || Enumerable
+                                        var newQuality = Enumerable
                                             .from(qualities)
-                                            .firstOrDefault(x => x.group.toLowerCase() == "chunk");
+                                            .firstOrDefault(x => x.name.toLowerCase().includes("source"))
+                                            || Enumerable
+                                                .from(qualities)
+                                                .firstOrDefault(x => x.group.toLowerCase() == "chunk");
 
-                                    if (newQuality) {
-                                        player.setQuality(newQuality.group);
-                                        console.info("quality set:", newQuality);
+                                        if (newQuality) {
+                                            player.setQuality(newQuality.group);
+                                            console.info("quality set:", newQuality);
+                                        }
+
+                                        setTimeout(updateQuality, 1000);
                                     }
+                                };
 
-                                    setTimeout(updateQuality, 1000);
-                                }
-                            };
+                                updateQuality();
 
-                            updateQuality();
+                                window.player = player;
+                                player.setVolume(1);
+                                player.play();
+                            }
+                        );
 
-                            window.player = player;
-                            player.setVolume(1);
-                            player.play();
-                        }
-                    );
+                        window.player = player;
+                    }
                 }
             }
-        });
-
-
+        }
     </script>
 </body>
 
