@@ -7,7 +7,7 @@
     <script type="module" src="https://cdnjs.cloudflare.com/ajax/libs/linq.js/4.0.0/linq.js"
         integrity="sha512-1xYFoIewi5LmSRllBARwDD0mBTQscchcMXKILLYTA/fFFO1z8tD/jtSt1lzzyle6Kxeu6MQ/GlkxFzWwAwuUzQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 
 <body style="border: 0; margin: 0; padding: 0; height:100%; width: 100%;">
@@ -17,55 +17,86 @@
         import Enumerable from 'https://cdnjs.cloudflare.com/ajax/libs/linq.js/4.0.0/linq.js'
         const urlSearchParams = new URLSearchParams(window.location.search);
         const channelId = urlSearchParams.get("channel") || "maguro_bs";
+        const socketIP = urlSearchParams.get("ip") || "localhost:3000";
+        const isMute = urlSearchParams.get("mute") || true;
+        const playerID = urlSearchParams.get("player") || 1;
+
+        const socket = io(socketIP);
+
+        console.log(socketIP);
+        let streamDataOld = null;
 
         const options = {
             width: "100%",
             height: "100%",
             channel: channelId,
             parent: [window.location.hostname || "localhost"],
-
             autoplay: true
         };
 
-        let player = new Twitch.Player("player_container", options);
-        player.setMuted(false);
-        player.setVolume(1.0);
 
-        player.addEventListener(
-            Twitch.Player.ONLINE,
-            (e) => {
-                console.warn("Channel went online.", e);
+        socket.on('connect', () => {
+            console.log('接続成功:', socket.id);
+            socket.emit("connection", {
+                "type": "stream",
+            });
+        });
 
-                const updateQuality = () => {
-                    var currentQuality = player.getQuality();
-                    console.info("current quality:", currentQuality);
+        // サーバーからデータを取得
+        socket.on("broadcast", (data) => {
+            if (data.event == "return_stream") {
+                const streamData = data.body.find(stream => stream.group == playerID); // グループ1を左側プレイヤーとして取得
+                console.log(playerID)
+                console.log(streamData)
+                if (streamDataOld?.stream != streamData.stream) {
+                    streamDataOld = streamData;
+                    options.channel = streamData.stream.replace("https://www.twitch.tv/", "");
+                    document.getElementById("player_container").innerHTML = "";
 
-                    if (currentQuality != "chunked") {
-                        var qualities = player.getQualities();
+                    let player = new Twitch.Player("player_container", options);
+                    player.setMuted(isMute);
+                    player.setVolume(1.0);
 
-                        var newQuality = Enumerable
-                            .from(qualities)
-                            .firstOrDefault(x => x.name.toLowerCase().includes("source"))
-                            || Enumerable
-                                .from(qualities)
-                                .firstOrDefault(x => x.group.toLowerCase() == "chunk");
+                    player.addEventListener(
+                        Twitch.Player.ONLINE,
+                        (e) => {
+                            console.warn("Channel went online.", e);
 
-                        if (newQuality) {
-                            player.setQuality(newQuality.group);
-                            console.info("quality set:", newQuality);
+                            const updateQuality = () => {
+                                var currentQuality = player.getQuality();
+                                console.info("current quality:", currentQuality);
+
+                                if (currentQuality != "chunked") {
+                                    var qualities = player.getQualities();
+
+                                    var newQuality = Enumerable
+                                        .from(qualities)
+                                        .firstOrDefault(x => x.name.toLowerCase().includes("source"))
+                                        || Enumerable
+                                            .from(qualities)
+                                            .firstOrDefault(x => x.group.toLowerCase() == "chunk");
+
+                                    if (newQuality) {
+                                        player.setQuality(newQuality.group);
+                                        console.info("quality set:", newQuality);
+                                    }
+
+                                    setTimeout(updateQuality, 1000);
+                                }
+                            };
+
+                            updateQuality();
+
+                            window.player = player;
+                            player.setVolume(1);
+                            player.play();
                         }
-
-                        setTimeout(updateQuality, 1000);
-                    }
-                };
-
-                updateQuality();
-
-                window.player = player;
-                player.setVolume(1);
-                player.play();
+                    );
+                }
             }
-        );
+        });
+
+
     </script>
 </body>
 
